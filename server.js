@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/database.js";
 import authRoutes from "./routes/auth.js";
+import eventRoutes from "./routes/events.js";
 
 // Load environment variables
 dotenv.config();
@@ -25,6 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/events", eventRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -56,4 +58,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Wedding Planner API running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth`);
+  console.log(`🎉 Event endpoints: http://localhost:${PORT}/api/events`);
 });
