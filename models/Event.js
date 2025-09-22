@@ -42,6 +42,11 @@ const eventSchema = new mongoose.Schema({
       enum: ["bride", "groom", "family", "friend", "guest"],
       default: "guest",
     },
+    permissions:{
+      type: String,
+      enum: ["admin", "collaborator", "pending_approval"],
+      default:"pending_approval"
+    },
     joinedAt: {
       type: Date,
       default: Date.now,
@@ -121,7 +126,7 @@ eventSchema.methods.generateInviteCode = function () {
 };
 
 // Method to add member to event
-eventSchema.methods.addMember = function (userId, role = "guest") {
+eventSchema.methods.addMember = function (userId, role = "guest", permission = "pending_approval") {
   const existingMember = this.members.find(member => 
     member.user.toString() === userId.toString()
   );
@@ -130,6 +135,7 @@ eventSchema.methods.addMember = function (userId, role = "guest") {
     this.members.push({
       user: userId,
       role: role,
+      permission: permission,
       joinedAt: new Date(),
     });
     return true;
