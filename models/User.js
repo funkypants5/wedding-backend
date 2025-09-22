@@ -29,6 +29,60 @@ const userSchema = new mongoose.Schema({
     required: [true, "Gender is required"],
     enum: ["male", "female"],
   },
+  // User preferences and settings
+  preferences: {
+    emailNotifications: {
+      type: Boolean,
+      default: true,
+    },
+    rsvpReminders: {
+      type: Boolean,
+      default: true,
+    },
+    guestPhotoUploads: {
+      type: Boolean,
+      default: true,
+    },
+    publicGallery: {
+      type: Boolean,
+      default: true,
+    },
+    guestListAccess: {
+      type: Boolean,
+      default: false,
+    },
+    budgetSharing: {
+      type: Boolean,
+      default: false,
+    },
+    theme: {
+      type: String,
+      enum: ["light", "dark", "auto"],
+      default: "light",
+    },
+    language: {
+      type: String,
+      default: "en",
+    },
+  },
+  // Profile information
+  profile: {
+    phone: {
+      type: String,
+      trim: true,
+    },
+    bio: {
+      type: String,
+      maxlength: [500, "Bio cannot exceed 500 characters"],
+    },
+    avatar: {
+      type: String,
+    },
+    location: {
+      type: String,
+      trim: true,
+    },
+  },
   createdAt: {
     type: Date,
     default: Date.now,
