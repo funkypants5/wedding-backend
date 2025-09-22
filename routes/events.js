@@ -46,6 +46,7 @@ router.post(
 
       const { name, description, eventType, eventDate, location } = req.body;
       const userId = req.user._id;
+      const userGender = req.user.gender;
 
       // Create new event
       const event = new Event({
@@ -57,7 +58,8 @@ router.post(
         createdBy: userId,
         members: [{
           user: userId,
-          role: "bride", // Default role for creator
+          role: userGender === "female" ? "bride" : "groom", // Default role for creator
+          permissions: "admin",
           joinedAt: new Date(),
         }],
       });
@@ -113,9 +115,9 @@ router.post(
       const userId = req.user._id;
 
       // Find event by invite code
-      const event = await Event.findOne({ 
+      const event = await Event.findOne({
         inviteCode: inviteCode.toUpperCase(),
-        isActive: true 
+        isActive: true
       });
 
       if (!event) {
@@ -127,7 +129,7 @@ router.post(
 
       // Check if user is already a member
       if (event.isMember(userId)) {
-          res.json({
+        res.json({
           success: true,
           message: "Successfully joined the event",
           data: {
@@ -136,31 +138,31 @@ router.post(
         })
       } else {
 
-      // Add user to event
-      const added = event.addMember(userId, "guest");
-      if (!added) {
-        return res.status(409).json({
-          success: false,
-          message: "Unable to join event",
-        });
-      }
+        // Add user to event
+        const added = event.addMember(userId, "guest");
+        if (!added) {
+          return res.status(409).json({
+            success: false,
+            message: "Unable to join event",
+          });
+        }
 
-      await event.save();
+        await event.save();
 
-      // Populate the event with user details
-      await event.populate([
-        { path: "createdBy", select: "name email" },
-        { path: "members.user", select: "name email" }
-      ]);
+        // Populate the event with user details
+        await event.populate([
+          { path: "createdBy", select: "name email" },
+          { path: "members.user", select: "name email" }
+        ]);
 
-      res.json({
-        success: true,
-        message: "Successfully joined the event",
-        data: {
-          event,
-        },
-      })
-    };
+        res.json({
+          success: true,
+          message: "Successfully joined the event",
+          data: {
+            event,
+          },
+        })
+      };
     } catch (error) {
       console.error("Join event error:", error);
       res.status(500).json({
@@ -384,6 +386,56 @@ router.delete(
     }
   }
 );
+
+// update member/collaborator perms
+router.put(
+  "/:eventId/members/:userId/:perms",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+      }
+
+      const { eventId, userId, perms } = req.params;
+
+      const event = await Event.findOne({ _id: eventId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      //console.log(eventId)
+      //console.log(userId)
+      //console.log(perms)
+
+      /*Event.findOneAndUpdate({ '_id': eventId, 'members._id': userId },
+        {
+          '$set': {
+            'members.$.permissions': perms
+          }
+        }
+      )
+        .then(resp => { console.log(resp) })*/
+
+
+      //so there's two IDs here and i'm... i'm just gonna update the member one good lord
+
+      Object.keys(event.members).forEach((key) => {
+        if (event.members[key].user._id.toString() === userId) {
+          event.members[key].permissions = perms
+        }
+      })
+      await event.save()
+
+      res.json({ success: true, message: "member updated", data: { event } });
+    } catch (error) {
+      console.error("Update member error:", error);
+      res.status(500).json({ success: false, message: "Server error updating member" });
+    }
+  }
+);
+
 
 // Update event
 router.put(
