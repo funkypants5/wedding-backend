@@ -69,6 +69,56 @@ const eventSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  // Wedding settings
+  settings: {
+    budget: {
+      type: Number,
+      default: 0,
+    },
+    guestPhotoUploads: {
+      type: Boolean,
+      default: true,
+    },
+    emailNotifications: {
+      type: Boolean,
+      default: true,
+    },
+    guestListAccess: {
+      type: Boolean,
+      default: false,
+    },
+    publicGallery: {
+      type: Boolean,
+      default: true,
+    },
+    budgetSharing: {
+      type: Boolean,
+      default: false,
+    },
+    rsvpReminders: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  // Budget expenses persisted per event
+  expenses: [
+    {
+      category: { type: String, required: true, trim: true },
+      description: { type: String, required: true, trim: true },
+      budgeted: { type: Number, required: true, min: 0 },
+      actual: { type: Number, default: 0, min: 0 },
+      vendor: { type: String, default: "", trim: true },
+      date: { type: Date, default: Date.now },
+      status: {
+        type: String,
+        enum: ["planned", "booked", "paid", "completed"],
+        default: "planned",
+      },
+      createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+    },
+  ],
   // Guests persisted per event
   guests: [
     {

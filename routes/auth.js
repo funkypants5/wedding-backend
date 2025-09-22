@@ -184,4 +184,139 @@ router.get("/verify", authenticateToken, (req, res) => {
   });
 });
 
+// Update user profile
+router.put(
+  "/profile",
+  authenticateToken,
+  [
+    body("name")
+      .optional()
+      .trim()
+      .isLength({ min: 2 })
+      .withMessage("Name must be at least 2 characters long"),
+    body("phone")
+      .optional()
+      .trim()
+      .isLength({ max: 20 })
+      .withMessage("Phone number cannot exceed 20 characters"),
+    body("bio")
+      .optional()
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage("Bio cannot exceed 500 characters"),
+    body("location")
+      .optional()
+      .trim()
+      .isLength({ max: 100 })
+      .withMessage("Location cannot exceed 100 characters"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      // Update profile fields
+      if (updates.name) user.name = updates.name;
+      if (updates.phone) user.profile.phone = updates.phone;
+      if (updates.bio) user.profile.bio = updates.bio;
+      if (updates.location) user.profile.location = updates.location;
+
+      await user.save();
+
+      res.json({
+        success: true,
+        message: "Profile updated successfully",
+        data: {
+          user: user.toJSON(),
+        },
+      });
+    } catch (error) {
+      console.error("Update profile error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error updating profile",
+      });
+    }
+  }
+);
+
+// Update user preferences
+router.put(
+  "/preferences",
+  authenticateToken,
+  [
+    body("emailNotifications").optional().isBoolean(),
+    body("rsvpReminders").optional().isBoolean(),
+    body("guestPhotoUploads").optional().isBoolean(),
+    body("publicGallery").optional().isBoolean(),
+    body("guestListAccess").optional().isBoolean(),
+    body("budgetSharing").optional().isBoolean(),
+    body("theme").optional().isIn(["light", "dark", "auto"]),
+    body("language").optional().isString(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      // Update preferences
+      Object.keys(updates).forEach(key => {
+        if (updates[key] !== undefined && user.preferences[key] !== undefined) {
+          user.preferences[key] = updates[key];
+        }
+      });
+
+      await user.save();
+
+      res.json({
+        success: true,
+        message: "Preferences updated successfully",
+        data: {
+          user: user.toJSON(),
+        },
+      });
+    } catch (error) {
+      console.error("Update preferences error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error updating preferences",
+      });
+    }
+  }
+);
+
 export default router;

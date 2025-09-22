@@ -239,6 +239,158 @@ router.get("/:eventId", authenticateToken, async (req, res) => {
   }
 });
 
+// ------- Expenses CRUD within an event -------
+// Add expense
+router.post(
+  "/:eventId/expenses",
+  authenticateToken,
+  [
+    body("category").trim().isLength({ min: 1 }).withMessage("Category is required"),
+    body("description").trim().isLength({ min: 1 }).withMessage("Description is required"),
+    body("budgeted").isNumeric().withMessage("Budgeted amount must be a number"),
+    body("actual").optional().isNumeric().withMessage("Actual amount must be a number"),
+    body("vendor").optional().isString(),
+    body("status").optional().isIn(["planned", "booked", "paid", "completed"]).withMessage("Invalid status"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+      const { category, description, budgeted, actual = 0, vendor = "", status = "planned" } = req.body;
+
+      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      const newExpense = {
+        category,
+        description,
+        budgeted: Number(budgeted),
+        actual: Number(actual),
+        vendor,
+        status,
+        createdBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      event.expenses.push(newExpense);
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.status(201).json({ success: true, message: "Expense added", data: { event } });
+    } catch (error) {
+      console.error("Add expense error:", error);
+      res.status(500).json({ success: false, message: "Server error adding expense" });
+    }
+  }
+);
+
+// Update expense
+router.put(
+  "/:eventId/expenses/:expenseIndex",
+  authenticateToken,
+  [
+    body("category").optional().isString(),
+    body("description").optional().isString(),
+    body("budgeted").optional().isNumeric().withMessage("Budgeted amount must be a number"),
+    body("actual").optional().isNumeric().withMessage("Actual amount must be a number"),
+    body("vendor").optional().isString(),
+    body("status").optional().isIn(["planned", "booked", "paid", "completed"]).withMessage("Invalid status"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+      }
+
+      const { eventId, expenseIndex } = req.params;
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      const index = parseInt(expenseIndex, 10);
+      if (Number.isNaN(index) || index < 0 || index >= event.expenses.length) {
+        return res.status(400).json({ success: false, message: "Invalid expense index" });
+      }
+
+      const expense = event.expenses[index];
+      Object.keys(updates).forEach((key) => {
+        if (updates[key] !== undefined) {
+          if (key === "budgeted" || key === "actual") {
+            expense[key] = Number(updates[key]);
+          } else {
+            expense[key] = updates[key];
+          }
+        }
+      });
+      expense.updatedAt = new Date();
+
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({ success: true, message: "Expense updated", data: { event } });
+    } catch (error) {
+      console.error("Update expense error:", error);
+      res.status(500).json({ success: false, message: "Server error updating expense" });
+    }
+  }
+);
+
+// Delete expense
+router.delete(
+  "/:eventId/expenses/:expenseIndex",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { eventId, expenseIndex } = req.params;
+      const userId = req.user._id;
+
+      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      const index = parseInt(expenseIndex, 10);
+      if (Number.isNaN(index) || index < 0 || index >= event.expenses.length) {
+        return res.status(400).json({ success: false, message: "Invalid expense index" });
+      }
+
+      event.expenses.splice(index, 1);
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({ success: true, message: "Expense deleted", data: { event } });
+    } catch (error) {
+      console.error("Delete expense error:", error);
+      res.status(500).json({ success: false, message: "Server error deleting expense" });
+    }
+  }
+);
+
 // ------- Guests CRUD within an event -------
 // Add guest
 router.post(
@@ -500,6 +652,9 @@ router.put(
         if (updates[key] !== undefined) {
           if (key === "eventDate") {
             event[key] = new Date(updates[key]);
+          } else if (key === "budget") {
+            // Update budget in settings
+            event.settings.budget = updates[key];
           } else {
             event[key] = updates[key];
           }
@@ -571,6 +726,114 @@ router.delete("/:eventId/leave", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error leaving event",
+    });
+  }
+});
+
+// Update wedding settings
+router.put(
+  "/:eventId/settings",
+  authenticateToken,
+  [
+    body("budget").optional().isNumeric().withMessage("Budget must be a number"),
+    body("guestPhotoUploads").optional().isBoolean(),
+    body("emailNotifications").optional().isBoolean(),
+    body("guestListAccess").optional().isBoolean(),
+    body("publicGallery").optional().isBoolean(),
+    body("budgetSharing").optional().isBoolean(),
+    body("rsvpReminders").optional().isBoolean(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        createdBy: userId,
+        isActive: true,
+      });
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or you don't have permission to edit settings",
+        });
+      }
+
+      // Update settings
+      Object.keys(updates).forEach(key => {
+        if (updates[key] !== undefined && event.settings[key] !== undefined) {
+          event.settings[key] = updates[key];
+        }
+      });
+
+      await event.save();
+
+      // Populate the event with user details
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" }
+      ]);
+
+      res.json({
+        success: true,
+        message: "Wedding settings updated successfully",
+        data: {
+          event,
+        },
+      });
+    } catch (error) {
+      console.error("Update wedding settings error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error updating wedding settings",
+      });
+    }
+  }
+);
+
+// Get wedding settings
+router.get("/:eventId/settings", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    }).select("settings name");
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have access",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        settings: event.settings,
+        eventName: event.name,
+      },
+    });
+  } catch (error) {
+    console.error("Get wedding settings error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error fetching wedding settings",
     });
   }
 });
