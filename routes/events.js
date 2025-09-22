@@ -127,11 +127,14 @@ router.post(
 
       // Check if user is already a member
       if (event.isMember(userId)) {
-        return res.status(409).json({
-          success: false,
-          message: "You are already a member of this event",
-        });
-      }
+          res.json({
+          success: true,
+          message: "Successfully joined the event",
+          data: {
+            event,
+          },
+        })
+      } else {
 
       // Add user to event
       const added = event.addMember(userId, "guest");
@@ -156,7 +159,8 @@ router.post(
         data: {
           event,
         },
-      });
+      })
+    };
     } catch (error) {
       console.error("Join event error:", error);
       res.status(500).json({
@@ -168,9 +172,10 @@ router.post(
 );
 
 // Get user's events
-router.get("/my-events", authenticateToken, async (req, res) => {
+router.get("/my-events/:userId", authenticateToken, async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.params.userId
+    console.log(req.params)
 
     // Find events where user is a member
     const events = await Event.find({
