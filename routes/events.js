@@ -1,10 +1,46 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { authenticateToken } from "../middleware/auth.js";
 
 const router = express.Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'uploads/vendors';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only images and documents are allowed'));
+    }
+  }
+});
 
 // Create new event
 router.post(
@@ -871,6 +907,385 @@ router.delete("/:eventId", authenticateToken, async (req, res) => {
       success: false,
       message: "Server error deleting event",
     });
+  }
+});
+
+// ------- Seating Arrangements -------
+// Save seating arrangement
+router.put("/:eventId/seating", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+    const { seatingData } = req.body;
+
+    // Verify user has access to this event
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have access",
+      });
+    }
+
+    // Update seating data
+    event.seating = {
+      ...seatingData,
+      lastUpdated: new Date(),
+    };
+
+    await event.save();
+
+    res.json({
+      success: true,
+      message: "Seating arrangement saved successfully",
+      data: {
+        seating: event.seating,
+      },
+    });
+  } catch (error) {
+    console.error("Save seating error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error saving seating arrangement",
+    });
+  }
+});
+
+// Get seating arrangement
+router.get("/:eventId/seating", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+
+    // Verify user has access to this event
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have access",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        seating: event.seating || {
+          totalGuests: 0,
+          guestPool: [],
+          tableGroups: [],
+          lastUpdated: new Date(),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get seating error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error fetching seating arrangement",
+    });
+  }
+});
+
+// ------- Vendor Management CRUD -------
+// Add vendor
+router.post(
+  "/:eventId/vendors",
+  authenticateToken,
+  [
+    body("category").trim().isLength({ min: 1 }).withMessage("Category is required"),
+    body("name").trim().isLength({ min: 1 }).withMessage("Vendor name is required"),
+    body("contactInfo").optional().isObject(),
+    body("contactInfo.phone").optional().isString(),
+    body("contactInfo.email").optional().custom((value) => {
+      if (!value || value === '') return true;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    }).withMessage("Invalid email"),
+    body("contactInfo.website").optional().custom((value) => {
+      if (!value || value === '') return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }).withMessage("Invalid website URL"),
+    body("pricing").optional().isObject(),
+    body("pricing.type").optional().isIn(["fixed", "per_person", "range"]).withMessage("Invalid pricing type"),
+    body("pricing.amount").optional().isNumeric().withMessage("Amount must be a number"),
+    body("pricing.rangeMin").optional().isNumeric().withMessage("Range min must be a number"),
+    body("pricing.rangeMax").optional().isNumeric().withMessage("Range max must be a number"),
+    body("notes").optional().isString(),
+    body("status").optional().isIn(["considering", "contacted", "quoted", "selected", "rejected"]).withMessage("Invalid status"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+      const vendorData = req.body;
+
+      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      const newVendor = {
+        ...vendorData,
+        createdBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      event.vendors.push(newVendor);
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.status(201).json({ success: true, message: "Vendor added", data: { event } });
+    } catch (error) {
+      console.error("Add vendor error:", error);
+      res.status(500).json({ success: false, message: "Server error adding vendor" });
+    }
+  }
+);
+
+// Get all vendors for an event
+router.get("/:eventId/vendors", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+
+    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true }).select("vendors");
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+    }
+
+    res.json({ success: true, data: { vendors: event.vendors } });
+  } catch (error) {
+    console.error("Get vendors error:", error);
+    res.status(500).json({ success: false, message: "Server error fetching vendors" });
+  }
+});
+
+// Update vendor
+router.put(
+  "/:eventId/vendors/:vendorId",
+  authenticateToken,
+  [
+    body("category").optional().isString(),
+    body("name").optional().isString(),
+    body("contactInfo").optional().isObject(),
+    body("contactInfo.phone").optional().isString(),
+    body("contactInfo.email").optional().custom((value) => {
+      if (!value || value === '') return true;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    }).withMessage("Invalid email"),
+    body("contactInfo.website").optional().custom((value) => {
+      if (!value || value === '') return true;
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }).withMessage("Invalid website URL"),
+    body("pricing").optional().isObject(),
+    body("pricing.type").optional().isIn(["fixed", "per_person", "range"]).withMessage("Invalid pricing type"),
+    body("pricing.amount").optional().isNumeric().withMessage("Amount must be a number"),
+    body("pricing.rangeMin").optional().isNumeric().withMessage("Range min must be a number"),
+    body("pricing.rangeMax").optional().isNumeric().withMessage("Range max must be a number"),
+    body("notes").optional().isString(),
+    body("status").optional().isIn(["considering", "contacted", "quoted", "selected", "rejected"]).withMessage("Invalid status"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+      }
+
+      const { eventId, vendorId } = req.params;
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      if (!event) {
+        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      }
+
+      const vendor = event.vendors.id(vendorId);
+      if (!vendor) {
+        return res.status(404).json({ success: false, message: "Vendor not found" });
+      }
+
+      Object.keys(updates).forEach((key) => {
+        if (updates[key] !== undefined) {
+          if (key === "contactInfo" || key === "pricing") {
+            Object.keys(updates[key]).forEach((subKey) => {
+              if (updates[key][subKey] !== undefined) {
+                vendor[key][subKey] = updates[key][subKey];
+              }
+            });
+          } else {
+            vendor[key] = updates[key];
+          }
+        }
+      });
+      vendor.updatedAt = new Date();
+
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({ success: true, message: "Vendor updated", data: { event } });
+    } catch (error) {
+      console.error("Update vendor error:", error);
+      res.status(500).json({ success: false, message: "Server error updating vendor" });
+    }
+  }
+);
+
+// Delete vendor
+router.delete("/:eventId/vendors/:vendorId", authenticateToken, async (req, res) => {
+  try {
+    const { eventId, vendorId } = req.params;
+    const userId = req.user._id;
+
+    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+    }
+
+    const vendor = event.vendors.id(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
+    }
+
+    event.vendors.pull(vendorId);
+    await event.save();
+
+    await event.populate([
+      { path: "createdBy", select: "name email" },
+      { path: "members.user", select: "name email" },
+    ]);
+
+    res.json({ success: true, message: "Vendor deleted", data: { event } });
+  } catch (error) {
+    console.error("Delete vendor error:", error);
+    res.status(500).json({ success: false, message: "Server error deleting vendor" });
+  }
+});
+
+// Upload vendor documents
+router.post("/:eventId/vendors/:vendorId/upload", authenticateToken, upload.array('documents', 5), async (req, res) => {
+  try {
+    const { eventId, vendorId } = req.params;
+    const userId = req.user._id;
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, message: "No files uploaded" });
+    }
+
+    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+    }
+
+    const vendor = event.vendors.id(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
+    }
+
+    // Add new documents to vendor
+    const newDocuments = files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      uploadedAt: new Date(),
+    }));
+
+    vendor.documents.push(...newDocuments);
+    vendor.updatedAt = new Date();
+
+    await event.save();
+
+    await event.populate([
+      { path: "createdBy", select: "name email" },
+      { path: "members.user", select: "name email" },
+    ]);
+
+    res.json({ 
+      success: true, 
+      message: "Documents uploaded successfully", 
+      data: { 
+        event,
+        uploadedFiles: newDocuments 
+      } 
+    });
+  } catch (error) {
+    console.error("Upload documents error:", error);
+    res.status(500).json({ success: false, message: "Server error uploading documents" });
+  }
+});
+
+// Serve vendor documents
+router.get("/:eventId/vendors/:vendorId/documents/:filename", authenticateToken, async (req, res) => {
+  try {
+    const { eventId, vendorId, filename } = req.params;
+    const userId = req.user._id;
+
+    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+    }
+
+    const vendor = event.vendors.id(vendorId);
+    if (!vendor) {
+      return res.status(404).json({ success: false, message: "Vendor not found" });
+    }
+
+    const document = vendor.documents.find(doc => doc.filename === filename);
+    if (!document) {
+      return res.status(404).json({ success: false, message: "Document not found" });
+    }
+
+    const filePath = path.join('uploads/vendors', filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: "File not found on server" });
+    }
+
+    // Set appropriate headers for inline viewing
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    
+    res.sendFile(path.resolve(filePath));
+  } catch (error) {
+    console.error("Serve document error:", error);
+    res.status(500).json({ success: false, message: "Server error serving document" });
   }
 });
 
