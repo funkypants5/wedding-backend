@@ -137,6 +137,38 @@ const eventSchema = new mongoose.Schema({
       updatedAt: { type: Date, default: Date.now },
     },
   ],
+  // Seating arrangements
+  seating: {
+    totalGuests: { type: Number, default: 0 },
+    guestPool: [{
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+      isPlaceholder: { type: Boolean, default: false },
+      tableId: { type: String, default: null },
+      relation: { type: String, default: "" },
+      dietary: { type: String, default: "" },
+    }],
+    tableGroups: [{
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+      color: { type: String, required: true },
+      tables: [{
+        id: { type: String, required: true },
+        label: { type: String, required: true },
+        capacity: { type: Number, required: true },
+        groupId: { type: String, required: true },
+        guests: [{
+          id: { type: String, required: true },
+          name: { type: String, required: true },
+          isPlaceholder: { type: Boolean, default: false },
+          tableId: { type: String, default: null },
+          relation: { type: String, default: "" },
+          dietary: { type: String, default: "" },
+        }],
+      }],
+    }],
+    lastUpdated: { type: Date, default: Date.now },
+  },
 });
 
 // Generate unique invite code before saving

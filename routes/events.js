@@ -874,4 +874,90 @@ router.delete("/:eventId", authenticateToken, async (req, res) => {
   }
 });
 
+// ------- Seating Arrangements -------
+// Save seating arrangement
+router.put("/:eventId/seating", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+    const { seatingData } = req.body;
+
+    // Verify user has access to this event
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have access",
+      });
+    }
+
+    // Update seating data
+    event.seating = {
+      ...seatingData,
+      lastUpdated: new Date(),
+    };
+
+    await event.save();
+
+    res.json({
+      success: true,
+      message: "Seating arrangement saved successfully",
+      data: {
+        seating: event.seating,
+      },
+    });
+  } catch (error) {
+    console.error("Save seating error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error saving seating arrangement",
+    });
+  }
+});
+
+// Get seating arrangement
+router.get("/:eventId/seating", authenticateToken, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user._id;
+
+    // Verify user has access to this event
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or you don't have access",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        seating: event.seating || {
+          totalGuests: 0,
+          guestPool: [],
+          tableGroups: [],
+          lastUpdated: new Date(),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get seating error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error fetching seating arrangement",
+    });
+  }
+});
+
 export default router;
