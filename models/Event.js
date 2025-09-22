@@ -169,6 +169,40 @@ const eventSchema = new mongoose.Schema({
     }],
     lastUpdated: { type: Date, default: Date.now },
   },
+  // Vendor management
+  vendors: [{
+    _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+    category: { type: String, required: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    contactInfo: {
+      phone: { type: String, default: "", trim: true },
+      email: { type: String, default: "", trim: true },
+      website: { type: String, default: "", trim: true },
+    },
+    pricing: {
+      type: { type: String, enum: ["fixed", "per_person", "range"], default: "fixed" },
+      amount: { type: Number, default: 0 },
+      rangeMin: { type: Number, default: 0 },
+      rangeMax: { type: Number, default: 0 },
+      currency: { type: String, default: "USD" },
+    },
+    notes: { type: String, default: "", trim: true },
+    documents: [{
+      filename: { type: String, required: true },
+      originalName: { type: String, required: true },
+      mimeType: { type: String, required: true },
+      size: { type: Number, required: true },
+      uploadedAt: { type: Date, default: Date.now },
+    }],
+    status: { 
+      type: String, 
+      enum: ["considering", "contacted", "quoted", "selected", "rejected"], 
+      default: "considering" 
+    },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  }],
 });
 
 // Generate unique invite code before saving
