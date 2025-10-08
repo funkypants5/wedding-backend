@@ -12,34 +12,39 @@ const router = express.Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = 'uploads/vendors';
+    const uploadDir = "uploads/vendors";
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(
+      null,
+      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
+    );
+  },
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const extname = allowedTypes.test(
+      path.extname(file.originalname).toLowerCase()
+    );
     const mimetype = allowedTypes.test(file.mimetype);
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Only images and documents are allowed'));
+      cb(new Error("Only images and documents are allowed"));
     }
-  }
+  },
 });
 
 // Create new event
@@ -92,12 +97,14 @@ router.post(
         eventDate: new Date(eventDate),
         location,
         createdBy: userId,
-        members: [{
-          user: userId,
-          role: userGender === "female" ? "bride" : "groom", // Default role for creator
-          permissions: "admin",
-          joinedAt: new Date(),
-        }],
+        members: [
+          {
+            user: userId,
+            role: userGender === "female" ? "bride" : "groom", // Default role for creator
+            permissions: "admin",
+            joinedAt: new Date(),
+          },
+        ],
       });
 
       await event.save();
@@ -105,7 +112,7 @@ router.post(
       // Populate the event with user details
       await event.populate([
         { path: "createdBy", select: "name email" },
-        { path: "members.user", select: "name email" }
+        { path: "members.user", select: "name email" },
       ]);
 
       res.status(201).json({
@@ -153,7 +160,7 @@ router.post(
       // Find event by invite code
       const event = await Event.findOne({
         inviteCode: inviteCode.toUpperCase(),
-        isActive: true
+        isActive: true,
       });
 
       if (!event) {
@@ -171,9 +178,8 @@ router.post(
           data: {
             event,
           },
-        })
+        });
       } else {
-
         // Add user to event
         const added = event.addMember(userId, "guest");
         if (!added) {
@@ -188,7 +194,7 @@ router.post(
         // Populate the event with user details
         await event.populate([
           { path: "createdBy", select: "name email" },
-          { path: "members.user", select: "name email" }
+          { path: "members.user", select: "name email" },
         ]);
 
         res.json({
@@ -197,8 +203,8 @@ router.post(
           data: {
             event,
           },
-        })
-      };
+        });
+      }
     } catch (error) {
       console.error("Join event error:", error);
       res.status(500).json({
@@ -212,8 +218,8 @@ router.post(
 // Get user's events
 router.get("/my-events/:userId", authenticateToken, async (req, res) => {
   try {
-    const userId = req.params.userId
-    console.log(req.params)
+    const userId = req.params.userId;
+    console.log(req.params);
 
     // Find events where user is a member
     const events = await Event.find({
@@ -281,27 +287,59 @@ router.post(
   "/:eventId/expenses",
   authenticateToken,
   [
-    body("category").trim().isLength({ min: 1 }).withMessage("Category is required"),
-    body("description").trim().isLength({ min: 1 }).withMessage("Description is required"),
-    body("budgeted").isNumeric().withMessage("Budgeted amount must be a number"),
-    body("actual").optional().isNumeric().withMessage("Actual amount must be a number"),
+    body("category")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Category is required"),
+    body("description")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Description is required"),
+    body("budgeted")
+      .isNumeric()
+      .withMessage("Budgeted amount must be a number"),
+    body("actual")
+      .optional()
+      .isNumeric()
+      .withMessage("Actual amount must be a number"),
     body("vendor").optional().isString(),
-    body("status").optional().isIn(["planned", "booked", "paid", "completed"]).withMessage("Invalid status"),
+    body("status")
+      .optional()
+      .isIn(["planned", "booked", "paid", "completed"])
+      .withMessage("Invalid status"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId } = req.params;
       const userId = req.user._id;
-      const { category, description, budgeted, actual = 0, vendor = "", status = "planned" } = req.body;
+      const {
+        category,
+        description,
+        budgeted,
+        actual = 0,
+        vendor = "",
+        status = "planned",
+      } = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const newExpense = {
@@ -324,10 +362,14 @@ router.post(
         { path: "members.user", select: "name email" },
       ]);
 
-      res.status(201).json({ success: true, message: "Expense added", data: { event } });
+      res
+        .status(201)
+        .json({ success: true, message: "Expense added", data: { event } });
     } catch (error) {
       console.error("Add expense error:", error);
-      res.status(500).json({ success: false, message: "Server error adding expense" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error adding expense" });
     }
   }
 );
@@ -339,30 +381,52 @@ router.put(
   [
     body("category").optional().isString(),
     body("description").optional().isString(),
-    body("budgeted").optional().isNumeric().withMessage("Budgeted amount must be a number"),
-    body("actual").optional().isNumeric().withMessage("Actual amount must be a number"),
+    body("budgeted")
+      .optional()
+      .isNumeric()
+      .withMessage("Budgeted amount must be a number"),
+    body("actual")
+      .optional()
+      .isNumeric()
+      .withMessage("Actual amount must be a number"),
     body("vendor").optional().isString(),
-    body("status").optional().isIn(["planned", "booked", "paid", "completed"]).withMessage("Invalid status"),
+    body("status")
+      .optional()
+      .isIn(["planned", "booked", "paid", "completed"])
+      .withMessage("Invalid status"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId, expenseIndex } = req.params;
       const userId = req.user._id;
       const updates = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const index = parseInt(expenseIndex, 10);
       if (Number.isNaN(index) || index < 0 || index >= event.expenses.length) {
-        return res.status(400).json({ success: false, message: "Invalid expense index" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid expense index" });
       }
 
       const expense = event.expenses[index];
@@ -387,7 +451,9 @@ router.put(
       res.json({ success: true, message: "Expense updated", data: { event } });
     } catch (error) {
       console.error("Update expense error:", error);
-      res.status(500).json({ success: false, message: "Server error updating expense" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error updating expense" });
     }
   }
 );
@@ -401,14 +467,23 @@ router.delete(
       const { eventId, expenseIndex } = req.params;
       const userId = req.user._id;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const index = parseInt(expenseIndex, 10);
       if (Number.isNaN(index) || index < 0 || index >= event.expenses.length) {
-        return res.status(400).json({ success: false, message: "Invalid expense index" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid expense index" });
       }
 
       event.expenses.splice(index, 1);
@@ -422,7 +497,9 @@ router.delete(
       res.json({ success: true, message: "Expense deleted", data: { event } });
     } catch (error) {
       console.error("Delete expense error:", error);
-      res.status(500).json({ success: false, message: "Server error deleting expense" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error deleting expense" });
     }
   }
 );
@@ -433,10 +510,20 @@ router.post(
   "/:eventId/guests",
   authenticateToken,
   [
-    body("name").trim().isLength({ min: 1 }).withMessage("Guest name is required"),
+    body("name")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Guest name is required"),
     body("relation").optional().isString(),
+    body("side")
+      .optional()
+      .isIn(["bride", "groom", "mutual"])
+      .withMessage("Invalid side value"),
     body("dietary").optional().isString(),
-    body("rsvp").optional().isIn(["Attending", "Not Attending", "Pending"]).withMessage("Invalid RSVP status"),
+    body("rsvp")
+      .optional()
+      .isIn(["Attending", "Not Attending", "Pending"])
+      .withMessage("Invalid RSVP status"),
     body("email").optional().isEmail().withMessage("Invalid email"),
     body("phone").optional().isString(),
   ],
@@ -444,21 +531,41 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId } = req.params;
       const userId = req.user._id;
-      const { name, relation = "", dietary = "", rsvp = "Pending", email = "", phone = "" } = req.body;
+      const {
+        name,
+        relation = "",
+        side = "mutual",
+        dietary = "",
+        rsvp = "Pending",
+        email = "",
+        phone = "",
+      } = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const newGuest = {
         name,
         relation,
+        side,
         dietary,
         rsvp,
         email,
@@ -469,17 +576,50 @@ router.post(
       };
 
       event.guests.push(newGuest);
-      await event.save();
+
+      // Retry save operation to handle version conflicts
+      let retries = 3;
+      let saved = false;
+
+      while (retries > 0 && !saved) {
+        try {
+          await event.save();
+          saved = true;
+        } catch (error) {
+          if (error.name === "VersionError" && retries > 1) {
+            // Reload the document and retry
+            const freshEvent = await Event.findOne({
+              _id: eventId,
+              "members.user": userId,
+              isActive: true,
+            });
+
+            if (freshEvent) {
+              freshEvent.guests.push(newGuest);
+              event = freshEvent;
+              retries--;
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
+      }
 
       await event.populate([
         { path: "createdBy", select: "name email" },
         { path: "members.user", select: "name email" },
       ]);
 
-      res.status(201).json({ success: true, message: "Guest added", data: { event } });
+      res
+        .status(201)
+        .json({ success: true, message: "Guest added", data: { event } });
     } catch (error) {
       console.error("Add guest error:", error);
-      res.status(500).json({ success: false, message: "Server error adding guest" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error adding guest" });
     }
   }
 );
@@ -491,8 +631,15 @@ router.put(
   [
     body("name").optional().isString(),
     body("relation").optional().isString(),
+    body("side")
+      .optional()
+      .isIn(["bride", "groom", "mutual"])
+      .withMessage("Invalid side value"),
     body("dietary").optional().isString(),
-    body("rsvp").optional().isIn(["Attending", "Not Attending", "Pending"]).withMessage("Invalid RSVP status"),
+    body("rsvp")
+      .optional()
+      .isIn(["Attending", "Not Attending", "Pending"])
+      .withMessage("Invalid RSVP status"),
     body("email").optional().isEmail().withMessage("Invalid email"),
     body("phone").optional().isString(),
   ],
@@ -500,21 +647,34 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId, guestIndex } = req.params;
       const userId = req.user._id;
       const updates = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const index = parseInt(guestIndex, 10);
       if (Number.isNaN(index) || index < 0 || index >= event.guests.length) {
-        return res.status(400).json({ success: false, message: "Invalid guest index" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid guest index" });
       }
 
       const guest = event.guests[index];
@@ -535,7 +695,9 @@ router.put(
       res.json({ success: true, message: "Guest updated", data: { event } });
     } catch (error) {
       console.error("Update guest error:", error);
-      res.status(500).json({ success: false, message: "Server error updating guest" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error updating guest" });
     }
   }
 );
@@ -549,14 +711,23 @@ router.delete(
       const { eventId, guestIndex } = req.params;
       const userId = req.user._id;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const index = parseInt(guestIndex, 10);
       if (Number.isNaN(index) || index < 0 || index >= event.guests.length) {
-        return res.status(400).json({ success: false, message: "Invalid guest index" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid guest index" });
       }
 
       event.guests.splice(index, 1);
@@ -570,7 +741,9 @@ router.delete(
       res.json({ success: true, message: "Guest deleted", data: { event } });
     } catch (error) {
       console.error("Delete guest error:", error);
-      res.status(500).json({ success: false, message: "Server error deleting guest" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error deleting guest" });
     }
   }
 );
@@ -583,14 +756,21 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId, userId, perms } = req.params;
 
       const event = await Event.findOne({ _id: eventId, isActive: true });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       //console.log(eventId)
@@ -606,24 +786,24 @@ router.put(
       )
         .then(resp => { console.log(resp) })*/
 
-
       //so there's two IDs here and i'm... i'm just gonna update the member one good lord
 
       Object.keys(event.members).forEach((key) => {
         if (event.members[key].user._id.toString() === userId) {
-          event.members[key].permissions = perms
+          event.members[key].permissions = perms;
         }
-      })
-      await event.save()
+      });
+      await event.save();
 
       res.json({ success: true, message: "member updated", data: { event } });
     } catch (error) {
       console.error("Update member error:", error);
-      res.status(500).json({ success: false, message: "Server error updating member" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error updating member" });
     }
   }
 );
-
 
 // Update event
 router.put(
@@ -684,7 +864,7 @@ router.put(
       }
 
       // Update event fields
-      Object.keys(updates).forEach(key => {
+      Object.keys(updates).forEach((key) => {
         if (updates[key] !== undefined) {
           if (key === "eventDate") {
             event[key] = new Date(updates[key]);
@@ -702,7 +882,7 @@ router.put(
       // Populate the event with user details
       await event.populate([
         { path: "createdBy", select: "name email" },
-        { path: "members.user", select: "name email" }
+        { path: "members.user", select: "name email" },
       ]);
 
       res.json({
@@ -745,7 +925,8 @@ router.delete("/:eventId/leave", authenticateToken, async (req, res) => {
     if (event.createdBy.toString() === userId) {
       return res.status(400).json({
         success: false,
-        message: "Event creator cannot leave the event. Please delete the event instead.",
+        message:
+          "Event creator cannot leave the event. Please delete the event instead.",
       });
     }
 
@@ -771,7 +952,10 @@ router.put(
   "/:eventId/settings",
   authenticateToken,
   [
-    body("budget").optional().isNumeric().withMessage("Budget must be a number"),
+    body("budget")
+      .optional()
+      .isNumeric()
+      .withMessage("Budget must be a number"),
     body("guestPhotoUploads").optional().isBoolean(),
     body("emailNotifications").optional().isBoolean(),
     body("guestListAccess").optional().isBoolean(),
@@ -803,12 +987,13 @@ router.put(
       if (!event) {
         return res.status(404).json({
           success: false,
-          message: "Event not found or you don't have permission to edit settings",
+          message:
+            "Event not found or you don't have permission to edit settings",
         });
       }
 
       // Update settings
-      Object.keys(updates).forEach(key => {
+      Object.keys(updates).forEach((key) => {
         if (updates[key] !== undefined && event.settings[key] !== undefined) {
           event.settings[key] = updates[key];
         }
@@ -819,7 +1004,7 @@ router.put(
       // Populate the event with user details
       await event.populate([
         { path: "createdBy", select: "name email" },
-        { path: "members.user", select: "name email" }
+        { path: "members.user", select: "name email" },
       ]);
 
       res.json({
@@ -980,9 +1165,7 @@ router.get("/:eventId/seating", authenticateToken, async (req, res) => {
       success: true,
       data: {
         seating: event.seating || {
-          totalGuests: 0,
-          guestPool: [],
-          tableGroups: [],
+          groups: [],
           lastUpdated: new Date(),
         },
       },
@@ -1002,45 +1185,83 @@ router.post(
   "/:eventId/vendors",
   authenticateToken,
   [
-    body("category").trim().isLength({ min: 1 }).withMessage("Category is required"),
-    body("name").trim().isLength({ min: 1 }).withMessage("Vendor name is required"),
+    body("category")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Category is required"),
+    body("name")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Vendor name is required"),
     body("contactInfo").optional().isObject(),
     body("contactInfo.phone").optional().isString(),
-    body("contactInfo.email").optional().custom((value) => {
-      if (!value || value === '') return true;
-      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    }).withMessage("Invalid email"),
-    body("contactInfo.website").optional().custom((value) => {
-      if (!value || value === '') return true;
-      try {
-        new URL(value);
-        return true;
-      } catch {
-        return false;
-      }
-    }).withMessage("Invalid website URL"),
+    body("contactInfo.email")
+      .optional()
+      .custom((value) => {
+        if (!value || value === "") return true;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      })
+      .withMessage("Invalid email"),
+    body("contactInfo.website")
+      .optional()
+      .custom((value) => {
+        if (!value || value === "") return true;
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .withMessage("Invalid website URL"),
     body("pricing").optional().isObject(),
-    body("pricing.type").optional().isIn(["fixed", "per_person", "range"]).withMessage("Invalid pricing type"),
-    body("pricing.amount").optional().isNumeric().withMessage("Amount must be a number"),
-    body("pricing.rangeMin").optional().isNumeric().withMessage("Range min must be a number"),
-    body("pricing.rangeMax").optional().isNumeric().withMessage("Range max must be a number"),
+    body("pricing.type")
+      .optional()
+      .isIn(["fixed", "per_person", "range"])
+      .withMessage("Invalid pricing type"),
+    body("pricing.amount")
+      .optional()
+      .isNumeric()
+      .withMessage("Amount must be a number"),
+    body("pricing.rangeMin")
+      .optional()
+      .isNumeric()
+      .withMessage("Range min must be a number"),
+    body("pricing.rangeMax")
+      .optional()
+      .isNumeric()
+      .withMessage("Range max must be a number"),
     body("notes").optional().isString(),
-    body("status").optional().isIn(["considering", "contacted", "quoted", "selected", "rejected"]).withMessage("Invalid status"),
+    body("status")
+      .optional()
+      .isIn(["considering", "contacted", "quoted", "selected", "rejected"])
+      .withMessage("Invalid status"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId } = req.params;
       const userId = req.user._id;
       const vendorData = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const newVendor = {
@@ -1058,10 +1279,14 @@ router.post(
         { path: "members.user", select: "name email" },
       ]);
 
-      res.status(201).json({ success: true, message: "Vendor added", data: { event } });
+      res
+        .status(201)
+        .json({ success: true, message: "Vendor added", data: { event } });
     } catch (error) {
       console.error("Add vendor error:", error);
-      res.status(500).json({ success: false, message: "Server error adding vendor" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error adding vendor" });
     }
   }
 );
@@ -1072,15 +1297,23 @@ router.get("/:eventId/vendors", authenticateToken, async (req, res) => {
     const { eventId } = req.params;
     const userId = req.user._id;
 
-    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true }).select("vendors");
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    }).select("vendors");
     if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Event not found or access denied" });
     }
 
     res.json({ success: true, data: { vendors: event.vendors } });
   } catch (error) {
     console.error("Get vendors error:", error);
-    res.status(500).json({ success: false, message: "Server error fetching vendors" });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error fetching vendors" });
   }
 });
 
@@ -1093,46 +1326,80 @@ router.put(
     body("name").optional().isString(),
     body("contactInfo").optional().isObject(),
     body("contactInfo.phone").optional().isString(),
-    body("contactInfo.email").optional().custom((value) => {
-      if (!value || value === '') return true;
-      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-    }).withMessage("Invalid email"),
-    body("contactInfo.website").optional().custom((value) => {
-      if (!value || value === '') return true;
-      try {
-        new URL(value);
-        return true;
-      } catch {
-        return false;
-      }
-    }).withMessage("Invalid website URL"),
+    body("contactInfo.email")
+      .optional()
+      .custom((value) => {
+        if (!value || value === "") return true;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      })
+      .withMessage("Invalid email"),
+    body("contactInfo.website")
+      .optional()
+      .custom((value) => {
+        if (!value || value === "") return true;
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .withMessage("Invalid website URL"),
     body("pricing").optional().isObject(),
-    body("pricing.type").optional().isIn(["fixed", "per_person", "range"]).withMessage("Invalid pricing type"),
-    body("pricing.amount").optional().isNumeric().withMessage("Amount must be a number"),
-    body("pricing.rangeMin").optional().isNumeric().withMessage("Range min must be a number"),
-    body("pricing.rangeMax").optional().isNumeric().withMessage("Range max must be a number"),
+    body("pricing.type")
+      .optional()
+      .isIn(["fixed", "per_person", "range"])
+      .withMessage("Invalid pricing type"),
+    body("pricing.amount")
+      .optional()
+      .isNumeric()
+      .withMessage("Amount must be a number"),
+    body("pricing.rangeMin")
+      .optional()
+      .isNumeric()
+      .withMessage("Range min must be a number"),
+    body("pricing.rangeMax")
+      .optional()
+      .isNumeric()
+      .withMessage("Range max must be a number"),
     body("notes").optional().isString(),
-    body("status").optional().isIn(["considering", "contacted", "quoted", "selected", "rejected"]).withMessage("Invalid status"),
+    body("status")
+      .optional()
+      .isIn(["considering", "contacted", "quoted", "selected", "rejected"])
+      .withMessage("Invalid status"),
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ success: false, message: "Validation failed", errors: errors.array() });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { eventId, vendorId } = req.params;
       const userId = req.user._id;
       const updates = req.body;
 
-      const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
       if (!event) {
-        return res.status(404).json({ success: false, message: "Event not found or access denied" });
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
       }
 
       const vendor = event.vendors.id(vendorId);
       if (!vendor) {
-        return res.status(404).json({ success: false, message: "Vendor not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Vendor not found" });
       }
 
       Object.keys(updates).forEach((key) => {
@@ -1160,132 +1427,240 @@ router.put(
       res.json({ success: true, message: "Vendor updated", data: { event } });
     } catch (error) {
       console.error("Update vendor error:", error);
-      res.status(500).json({ success: false, message: "Server error updating vendor" });
+      res
+        .status(500)
+        .json({ success: false, message: "Server error updating vendor" });
     }
   }
 );
 
 // Delete vendor
-router.delete("/:eventId/vendors/:vendorId", authenticateToken, async (req, res) => {
-  try {
-    const { eventId, vendorId } = req.params;
-    const userId = req.user._id;
+router.delete(
+  "/:eventId/vendors/:vendorId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { eventId, vendorId } = req.params;
+      const userId = req.user._id;
 
-    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
-    if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const vendor = event.vendors.id(vendorId);
+      if (!vendor) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Vendor not found" });
+      }
+
+      event.vendors.pull(vendorId);
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({ success: true, message: "Vendor deleted", data: { event } });
+    } catch (error) {
+      console.error("Delete vendor error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Server error deleting vendor" });
     }
-
-    const vendor = event.vendors.id(vendorId);
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: "Vendor not found" });
-    }
-
-    event.vendors.pull(vendorId);
-    await event.save();
-
-    await event.populate([
-      { path: "createdBy", select: "name email" },
-      { path: "members.user", select: "name email" },
-    ]);
-
-    res.json({ success: true, message: "Vendor deleted", data: { event } });
-  } catch (error) {
-    console.error("Delete vendor error:", error);
-    res.status(500).json({ success: false, message: "Server error deleting vendor" });
   }
-});
+);
 
 // Upload vendor documents
-router.post("/:eventId/vendors/:vendorId/upload", authenticateToken, upload.array('documents', 5), async (req, res) => {
+router.post(
+  "/:eventId/vendors/:vendorId/upload",
+  authenticateToken,
+  upload.array("documents", 5),
+  async (req, res) => {
+    try {
+      const { eventId, vendorId } = req.params;
+      const userId = req.user._id;
+      const files = req.files;
+
+      if (!files || files.length === 0) {
+        return res
+          .status(400)
+          .json({ success: false, message: "No files uploaded" });
+      }
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const vendor = event.vendors.id(vendorId);
+      if (!vendor) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Vendor not found" });
+      }
+
+      // Add new documents to vendor
+      const newDocuments = files.map((file) => ({
+        filename: file.filename,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        uploadedAt: new Date(),
+      }));
+
+      vendor.documents.push(...newDocuments);
+      vendor.updatedAt = new Date();
+
+      await event.save();
+
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({
+        success: true,
+        message: "Documents uploaded successfully",
+        data: {
+          event,
+          uploadedFiles: newDocuments,
+        },
+      });
+    } catch (error) {
+      console.error("Upload documents error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Server error uploading documents" });
+    }
+  }
+);
+
+// Serve vendor documents
+router.get(
+  "/:eventId/vendors/:vendorId/documents/:filename",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { eventId, vendorId, filename } = req.params;
+      const userId = req.user._id;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const vendor = event.vendors.id(vendorId);
+      if (!vendor) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Vendor not found" });
+      }
+
+      const document = vendor.documents.find(
+        (doc) => doc.filename === filename
+      );
+      if (!document) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Document not found" });
+      }
+
+      const filePath = path.join("uploads/vendors", filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res
+          .status(404)
+          .json({ success: false, message: "File not found on server" });
+      }
+
+      // Set appropriate headers for inline viewing
+      res.setHeader("Content-Type", document.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${document.originalName}"`
+      );
+      res.setHeader("Cache-Control", "public, max-age=3600"); // Cache for 1 hour
+
+      res.sendFile(path.resolve(filePath));
+    } catch (error) {
+      console.error("Serve document error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Server error serving document" });
+    }
+  }
+);
+
+// Migration endpoint to add side field to existing guests
+router.post("/:eventId/migrate-guests", authenticateToken, async (req, res) => {
   try {
-    const { eventId, vendorId } = req.params;
+    const { eventId } = req.params;
     const userId = req.user._id;
-    const files = req.files;
 
-    if (!files || files.length === 0) {
-      return res.status(400).json({ success: false, message: "No files uploaded" });
-    }
-
-    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
+    const event = await Event.findOne({
+      _id: eventId,
+      "members.user": userId,
+      isActive: true,
+    });
     if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found or access denied" });
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or access denied",
+      });
     }
 
-    const vendor = event.vendors.id(vendorId);
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: "Vendor not found" });
+    // Update guests that don't have a side field
+    let updatedCount = 0;
+    event.guests.forEach((guest) => {
+      if (!guest.side) {
+        guest.side = "mutual"; // Default to mutual for existing guests
+        updatedCount++;
+      }
+    });
+
+    if (updatedCount > 0) {
+      await event.save();
     }
-
-    // Add new documents to vendor
-    const newDocuments = files.map(file => ({
-      filename: file.filename,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      uploadedAt: new Date(),
-    }));
-
-    vendor.documents.push(...newDocuments);
-    vendor.updatedAt = new Date();
-
-    await event.save();
 
     await event.populate([
       { path: "createdBy", select: "name email" },
       { path: "members.user", select: "name email" },
     ]);
 
-    res.json({ 
-      success: true, 
-      message: "Documents uploaded successfully", 
-      data: { 
-        event,
-        uploadedFiles: newDocuments 
-      } 
+    res.json({
+      success: true,
+      message: `Updated ${updatedCount} guests with side field`,
+      data: { event },
     });
   } catch (error) {
-    console.error("Upload documents error:", error);
-    res.status(500).json({ success: false, message: "Server error uploading documents" });
-  }
-});
-
-// Serve vendor documents
-router.get("/:eventId/vendors/:vendorId/documents/:filename", authenticateToken, async (req, res) => {
-  try {
-    const { eventId, vendorId, filename } = req.params;
-    const userId = req.user._id;
-
-    const event = await Event.findOne({ _id: eventId, "members.user": userId, isActive: true });
-    if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found or access denied" });
-    }
-
-    const vendor = event.vendors.id(vendorId);
-    if (!vendor) {
-      return res.status(404).json({ success: false, message: "Vendor not found" });
-    }
-
-    const document = vendor.documents.find(doc => doc.filename === filename);
-    if (!document) {
-      return res.status(404).json({ success: false, message: "Document not found" });
-    }
-
-    const filePath = path.join('uploads/vendors', filename);
-    
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ success: false, message: "File not found on server" });
-    }
-
-    // Set appropriate headers for inline viewing
-    res.setHeader('Content-Type', document.mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`);
-    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    
-    res.sendFile(path.resolve(filePath));
-  } catch (error) {
-    console.error("Serve document error:", error);
-    res.status(500).json({ success: false, message: "Server error serving document" });
+    console.error("Migrate guests error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error migrating guests" });
   }
 });
 

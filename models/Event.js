@@ -31,27 +31,29 @@ const eventSchema = new mongoose.Schema({
     ref: "User",
     required: [true, "Event creator is required"],
   },
-  members: [{
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+  members: [
+    {
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+      },
+      role: {
+        type: String,
+        enum: ["bride", "groom", "family", "friend", "guest"],
+        default: "guest",
+      },
+      permissions: {
+        type: String,
+        enum: ["admin", "collaborator", "pending_approval"],
+        default: "pending_approval",
+      },
+      joinedAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
-    role: {
-      type: String,
-      enum: ["bride", "groom", "family", "friend", "guest"],
-      default: "guest",
-    },
-    permissions:{
-      type: String,
-      enum: ["admin", "collaborator", "pending_approval"],
-      default:"pending_approval"
-    },
-    joinedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  }],
+  ],
   inviteCode: {
     type: String,
     unique: true,
@@ -124,6 +126,11 @@ const eventSchema = new mongoose.Schema({
     {
       name: { type: String, required: true, trim: true },
       relation: { type: String, default: "", trim: true },
+      side: {
+        type: String,
+        enum: ["bride", "groom", "mutual"],
+        default: "mutual",
+      },
       dietary: { type: String, default: "", trim: true },
       rsvp: {
         type: String,
@@ -137,72 +144,74 @@ const eventSchema = new mongoose.Schema({
       updatedAt: { type: Date, default: Date.now },
     },
   ],
-  // Seating arrangements
+  // Seating arrangements - Group based system
   seating: {
-    totalGuests: { type: Number, default: 0 },
-    guestPool: [{
-      id: { type: String, required: true },
-      name: { type: String, required: true },
-      isPlaceholder: { type: Boolean, default: false },
-      tableId: { type: String, default: null },
-      relation: { type: String, default: "" },
-      dietary: { type: String, default: "" },
-    }],
-    tableGroups: [{
-      id: { type: String, required: true },
-      name: { type: String, required: true },
-      color: { type: String, required: true },
-      tables: [{
+    groups: [
+      {
         id: { type: String, required: true },
-        label: { type: String, required: true },
-        capacity: { type: Number, required: true },
-        groupId: { type: String, required: true },
-        guests: [{
-          id: { type: String, required: true },
-          name: { type: String, required: true },
-          isPlaceholder: { type: Boolean, default: false },
-          tableId: { type: String, default: null },
-          relation: { type: String, default: "" },
-          dietary: { type: String, default: "" },
-        }],
-      }],
-    }],
+        name: { type: String, required: true },
+        color: { type: String, default: "#3b82f6" },
+        sides: [{ type: String, enum: ["bride", "groom", "mutual"] }], // Can select multiple
+        relationships: [{ type: String }], // Can select multiple relationships
+        relationshipCategories: [{ type: String }], // Categories like 'immediate_family', 'friends'
+        tableSize: { type: Number, default: 8 },
+        assignedGuests: [{ type: mongoose.Schema.Types.Mixed }], // Guests assigned to this group (before table distribution)
+        tables: [
+          {
+            id: { type: String, required: true },
+            name: { type: String, required: true },
+            capacity: { type: Number, required: true },
+            guests: [{ type: mongoose.Schema.Types.Mixed }], // Store guest objects
+          },
+        ],
+        createdAt: { type: Date, default: Date.now },
+        updatedAt: { type: Date, default: Date.now },
+      },
+    ],
     lastUpdated: { type: Date, default: Date.now },
   },
   // Vendor management
-  vendors: [{
-    _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
-    category: { type: String, required: true, trim: true },
-    name: { type: String, required: true, trim: true },
-    contactInfo: {
-      phone: { type: String, default: "", trim: true },
-      email: { type: String, default: "", trim: true },
-      website: { type: String, default: "", trim: true },
+  vendors: [
+    {
+      _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+      category: { type: String, required: true, trim: true },
+      name: { type: String, required: true, trim: true },
+      contactInfo: {
+        phone: { type: String, default: "", trim: true },
+        email: { type: String, default: "", trim: true },
+        website: { type: String, default: "", trim: true },
+      },
+      pricing: {
+        type: {
+          type: String,
+          enum: ["fixed", "per_person", "range"],
+          default: "fixed",
+        },
+        amount: { type: Number, default: 0 },
+        rangeMin: { type: Number, default: 0 },
+        rangeMax: { type: Number, default: 0 },
+        currency: { type: String, default: "USD" },
+      },
+      notes: { type: String, default: "", trim: true },
+      documents: [
+        {
+          filename: { type: String, required: true },
+          originalName: { type: String, required: true },
+          mimeType: { type: String, required: true },
+          size: { type: Number, required: true },
+          uploadedAt: { type: Date, default: Date.now },
+        },
+      ],
+      status: {
+        type: String,
+        enum: ["considering", "contacted", "quoted", "selected", "rejected"],
+        default: "considering",
+      },
+      createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
     },
-    pricing: {
-      type: { type: String, enum: ["fixed", "per_person", "range"], default: "fixed" },
-      amount: { type: Number, default: 0 },
-      rangeMin: { type: Number, default: 0 },
-      rangeMax: { type: Number, default: 0 },
-      currency: { type: String, default: "USD" },
-    },
-    notes: { type: String, default: "", trim: true },
-    documents: [{
-      filename: { type: String, required: true },
-      originalName: { type: String, required: true },
-      mimeType: { type: String, required: true },
-      size: { type: Number, required: true },
-      uploadedAt: { type: Date, default: Date.now },
-    }],
-    status: { 
-      type: String, 
-      enum: ["considering", "contacted", "quoted", "selected", "rejected"], 
-      default: "considering" 
-    },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    createdAt: { type: Date, default: Date.now },
-    updatedAt: { type: Date, default: Date.now },
-  }],
+  ],
 });
 
 // Generate unique invite code before saving
@@ -210,7 +219,7 @@ eventSchema.pre("save", async function (next) {
   if (this.isNew && !this.inviteCode) {
     let inviteCode;
     let isUnique = false;
-    
+
     // Keep generating until we get a unique code
     while (!isUnique) {
       inviteCode = this.generateInviteCode();
@@ -219,7 +228,7 @@ eventSchema.pre("save", async function (next) {
         isUnique = true;
       }
     }
-    
+
     this.inviteCode = inviteCode;
   }
   next();
@@ -242,11 +251,15 @@ eventSchema.methods.generateInviteCode = function () {
 };
 
 // Method to add member to event
-eventSchema.methods.addMember = function (userId, role = "guest", permission = "pending_approval") {
-  const existingMember = this.members.find(member => 
-    member.user.toString() === userId.toString()
+eventSchema.methods.addMember = function (
+  userId,
+  role = "guest",
+  permission = "pending_approval"
+) {
+  const existingMember = this.members.find(
+    (member) => member.user.toString() === userId.toString()
   );
-  
+
   if (!existingMember) {
     this.members.push({
       user: userId,
@@ -261,22 +274,22 @@ eventSchema.methods.addMember = function (userId, role = "guest", permission = "
 
 // Method to remove member from event
 eventSchema.methods.removeMember = function (userId) {
-  this.members = this.members.filter(member => 
-    member.user.toString() !== userId.toString()
+  this.members = this.members.filter(
+    (member) => member.user.toString() !== userId.toString()
   );
 };
 
 // Method to check if user is member
 eventSchema.methods.isMember = function (userId) {
-  return this.members.some(member => 
-    member.user.toString() === userId.toString()
+  return this.members.some(
+    (member) => member.user.toString() === userId.toString()
   );
 };
 
 // Method to get member role
 eventSchema.methods.getMemberRole = function (userId) {
-  const member = this.members.find(member => 
-    member.user.toString() === userId.toString()
+  const member = this.members.find(
+    (member) => member.user.toString() === userId.toString()
   );
   return member ? member.role : null;
 };
