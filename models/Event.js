@@ -77,9 +77,10 @@ const eventSchema = new mongoose.Schema({
       type: Number,
       default: 0,
     },
-    guestPhotoUploads: {
-      type: Boolean,
-      default: true,
+    categoryBudgets: {
+      type: Map,
+      of: Number,
+      default: new Map(),
     },
     emailNotifications: {
       type: Boolean,
@@ -88,10 +89,6 @@ const eventSchema = new mongoose.Schema({
     guestListAccess: {
       type: Boolean,
       default: false,
-    },
-    publicGallery: {
-      type: Boolean,
-      default: true,
     },
     budgetSharing: {
       type: Boolean,
@@ -207,6 +204,7 @@ const eventSchema = new mongoose.Schema({
         enum: ["considering", "contacted", "quoted", "selected", "rejected"],
         default: "considering",
       },
+      actualSpent: { type: Number, default: 0 }, // Amount actually spent on this vendor
       createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       createdAt: { type: Date, default: Date.now },
       updatedAt: { type: Date, default: Date.now },

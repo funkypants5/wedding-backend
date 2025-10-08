@@ -956,10 +956,9 @@ router.put(
       .optional()
       .isNumeric()
       .withMessage("Budget must be a number"),
-    body("guestPhotoUploads").optional().isBoolean(),
+    body("categoryBudgets").optional().isObject(),
     body("emailNotifications").optional().isBoolean(),
     body("guestListAccess").optional().isBoolean(),
-    body("publicGallery").optional().isBoolean(),
     body("budgetSharing").optional().isBoolean(),
     body("rsvpReminders").optional().isBoolean(),
   ],
@@ -1367,6 +1366,10 @@ router.put(
       .optional()
       .isIn(["considering", "contacted", "quoted", "selected", "rejected"])
       .withMessage("Invalid status"),
+    body("actualSpent")
+      .optional()
+      .isNumeric()
+      .withMessage("Actual spent must be a number"),
   ],
   async (req, res) => {
     try {
