@@ -6,6 +6,12 @@ import fs from "fs";
 import Event from "../models/Event.js";
 import User from "../models/User.js";
 import { authenticateToken } from "../middleware/auth.js";
+import {
+  requireEventMember,
+  requireOwner,
+  requireOwnerOrAdmin,
+  blockPendingUsers,
+} from "../middleware/authorization.js";
 
 const router = express.Router();
 
@@ -89,6 +95,11 @@ router.post(
       const userId = req.user._id;
       const userGender = req.user.gender;
 
+      console.log("BACKEND EVENT CREATION DEBUG:");
+      console.log("Request user from token:", req.user);
+      console.log("User ID from token:", userId);
+      console.log("User gender:", userGender);
+
       // Create new event
       const event = new Event({
         name,
@@ -101,7 +112,7 @@ router.post(
           {
             user: userId,
             role: userGender === "female" ? "bride" : "groom", // Default role for creator
-            permissions: "admin",
+            permissions: "owner", // Event creator is the owner
             joinedAt: new Date(),
           },
         ],
@@ -109,11 +120,19 @@ router.post(
 
       await event.save();
 
+      console.log("Event created with members:", event.members);
+      console.log("Event createdBy:", event.createdBy);
+
       // Populate the event with user details
       await event.populate([
         { path: "createdBy", select: "name email" },
         { path: "members.user", select: "name email" },
       ]);
+
+      console.log("Event after populate:", {
+        createdBy: event.createdBy,
+        members: event.members,
+      });
 
       res.status(201).json({
         success: true,
@@ -246,46 +265,83 @@ router.get("/my-events/:userId", authenticateToken, async (req, res) => {
 });
 
 // Get event details
-router.get("/:eventId", authenticateToken, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user._id;
+router.get(
+  "/:eventId",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
 
-    const event = await Event.findOne({
-      _id: eventId,
-      "members.user": userId,
-      isActive: true,
-    })
-      .populate("createdBy", "name email")
-      .populate("members.user", "name email");
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      })
+        .populate("createdBy", "name email")
+        .populate("members.user", "name email");
 
-    if (!event) {
-      return res.status(404).json({
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or you don't have access",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          event,
+        },
+      });
+    } catch (error) {
+      console.error("Get event error:", error);
+      res.status(500).json({
         success: false,
-        message: "Event not found or you don't have access",
+        message: "Server error fetching event",
       });
     }
-
-    res.json({
-      success: true,
-      data: {
-        event,
-      },
-    });
-  } catch (error) {
-    console.error("Get event error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error fetching event",
-    });
   }
-});
+);
+
+// Get event members (owner and admin only, for Collaborators page)
+router.get(
+  "/:eventId/members",
+  authenticateToken,
+  requireEventMember,
+  requireOwnerOrAdmin,
+  async (req, res) => {
+    try {
+      const event = req.event;
+
+      // Populate the members with user details
+      await event.populate("members.user", "name email");
+
+      res.json({
+        success: true,
+        data: {
+          members: event.members,
+        },
+      });
+    } catch (error) {
+      console.error("Get members error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error fetching members",
+      });
+    }
+  }
+);
 
 // ------- Expenses CRUD within an event -------
 // Add expense
 router.post(
   "/:eventId/expenses",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("category")
       .trim()
@@ -378,6 +434,8 @@ router.post(
 router.put(
   "/:eventId/expenses/:expenseIndex",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("category").optional().isString(),
     body("description").optional().isString(),
@@ -462,6 +520,8 @@ router.put(
 router.delete(
   "/:eventId/expenses/:expenseIndex",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   async (req, res) => {
     try {
       const { eventId, expenseIndex } = req.params;
@@ -509,6 +569,8 @@ router.delete(
 router.post(
   "/:eventId/guests",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("name")
       .trim()
@@ -628,6 +690,8 @@ router.post(
 router.put(
   "/:eventId/guests/:guestIndex",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("name").optional().isString(),
     body("relation").optional().isString(),
@@ -706,6 +770,8 @@ router.put(
 router.delete(
   "/:eventId/guests/:guestIndex",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   async (req, res) => {
     try {
       const { eventId, guestIndex } = req.params;
@@ -764,6 +830,7 @@ router.put(
       }
 
       const { eventId, userId, perms } = req.params;
+      const requestingUserId = req.user._id;
 
       const event = await Event.findOne({ _id: eventId, isActive: true });
       if (!event) {
@@ -773,20 +840,79 @@ router.put(
         });
       }
 
-      //console.log(eventId)
-      //console.log(userId)
-      //console.log(perms)
+      // Check if the requesting user is owner or admin
+      const requestingMember = event.members.find(
+        (m) => m.user._id.toString() === requestingUserId.toString()
+      );
 
-      /*Event.findOneAndUpdate({ '_id': eventId, 'members._id': userId },
-        {
-          '$set': {
-            'members.$.permissions': perms
-          }
-        }
-      )
-        .then(resp => { console.log(resp) })*/
+      if (
+        !requestingMember ||
+        (requestingMember.permissions !== "owner" &&
+          requestingMember.permissions !== "admin")
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Only event owners or admins can change member permissions",
+        });
+      }
 
-      //so there's two IDs here and i'm... i'm just gonna update the member one good lord
+      // Find the target member
+      const targetMember = event.members.find(
+        (m) => m.user._id.toString() === userId
+      );
+
+      if (!targetMember) {
+        return res.status(404).json({
+          success: false,
+          message: "Member not found in this event",
+        });
+      }
+
+      // Prevent changing the owner's permission
+      if (targetMember.permissions === "owner") {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot change the owner's permission",
+        });
+      }
+
+      // Prevent setting someone else as owner
+      if (perms === "owner") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Cannot assign owner permission. There can only be one owner.",
+        });
+      }
+
+      // Only owner can promote to admin
+      if (perms === "admin" && requestingMember.permissions !== "owner") {
+        return res.status(403).json({
+          success: false,
+          message: "Only the owner can promote users to admin",
+        });
+      }
+
+      // Admins cannot change other admin permissions (except owner can change any admin)
+      if (
+        targetMember.permissions === "admin" &&
+        requestingMember.permissions !== "owner" &&
+        perms === "admin"
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Only the owner can change admin permissions",
+        });
+      }
+
+      // Update the member's permission
+      console.log("Backend permission update:", {
+        requestingUserId,
+        requestingMemberPermission: requestingMember.permissions,
+        targetUserId: userId,
+        targetMemberPermission: targetMember.permissions,
+        newPermission: perms,
+      });
 
       Object.keys(event.members).forEach((key) => {
         if (event.members[key].user._id.toString() === userId) {
@@ -795,12 +921,88 @@ router.put(
       });
       await event.save();
 
+      console.log("Permission updated successfully:", {
+        updatedMember: event.members.find(
+          (m) => m.user._id.toString() === userId
+        ),
+      });
+
       res.json({ success: true, message: "member updated", data: { event } });
     } catch (error) {
       console.error("Update member error:", error);
       res
         .status(500)
         .json({ success: false, message: "Server error updating member" });
+    }
+  }
+);
+
+// Remove/reject a member from event (owner and admin only)
+router.delete(
+  "/:eventId/members/:userId",
+  authenticateToken,
+  requireEventMember,
+  requireOwnerOrAdmin,
+  async (req, res) => {
+    try {
+      const { eventId, userId } = req.params;
+      const event = req.event; // Attached by requireEventMember middleware
+
+      // Find the target member
+      const targetMember = event.members.find(
+        (m) => m.user._id.toString() === userId
+      );
+
+      if (!targetMember) {
+        return res.status(404).json({
+          success: false,
+          message: "Member not found in this event",
+        });
+      }
+
+      // Prevent removing the owner
+      if (targetMember.permissions === "owner") {
+        return res.status(403).json({
+          success: false,
+          message: "Cannot remove the event owner",
+        });
+      }
+
+      // Only owner can remove admins
+      if (
+        targetMember.permissions === "admin" &&
+        req.userMember.permissions !== "owner"
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Only the owner can remove admins",
+        });
+      }
+
+      // Remove the member from the event
+      event.members = event.members.filter(
+        (m) => m.user._id.toString() !== userId
+      );
+
+      await event.save();
+
+      // Populate the event with user details
+      await event.populate([
+        { path: "createdBy", select: "name email" },
+        { path: "members.user", select: "name email" },
+      ]);
+
+      res.json({
+        success: true,
+        message: "Member removed successfully",
+        data: { event },
+      });
+    } catch (error) {
+      console.error("Remove member error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error removing member",
+      });
     }
   }
 );
@@ -951,6 +1153,8 @@ router.delete("/:eventId/leave", authenticateToken, async (req, res) => {
 router.put(
   "/:eventId/settings",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("budget")
       .optional()
@@ -1024,39 +1228,45 @@ router.put(
 );
 
 // Get wedding settings
-router.get("/:eventId/settings", authenticateToken, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user._id;
+router.get(
+  "/:eventId/settings",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
 
-    const event = await Event.findOne({
-      _id: eventId,
-      "members.user": userId,
-      isActive: true,
-    }).select("settings name");
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      }).select("settings name");
 
-    if (!event) {
-      return res.status(404).json({
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or you don't have access",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          settings: event.settings,
+          eventName: event.name,
+        },
+      });
+    } catch (error) {
+      console.error("Get wedding settings error:", error);
+      res.status(500).json({
         success: false,
-        message: "Event not found or you don't have access",
+        message: "Server error fetching wedding settings",
       });
     }
-
-    res.json({
-      success: true,
-      data: {
-        settings: event.settings,
-        eventName: event.name,
-      },
-    });
-  } catch (error) {
-    console.error("Get wedding settings error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error fetching wedding settings",
-    });
   }
-});
+);
 
 // Delete event (only creator)
 router.delete("/:eventId", authenticateToken, async (req, res) => {
@@ -1096,93 +1306,107 @@ router.delete("/:eventId", authenticateToken, async (req, res) => {
 
 // ------- Seating Arrangements -------
 // Save seating arrangement
-router.put("/:eventId/seating", authenticateToken, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user._id;
-    const { seatingData } = req.body;
+router.put(
+  "/:eventId/seating",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
+      const { seatingData } = req.body;
 
-    // Verify user has access to this event
-    const event = await Event.findOne({
-      _id: eventId,
-      "members.user": userId,
-      isActive: true,
-    });
+      // Verify user has access to this event
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
 
-    if (!event) {
-      return res.status(404).json({
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or you don't have access",
+        });
+      }
+
+      // Update seating data
+      event.seating = {
+        ...seatingData,
+        lastUpdated: new Date(),
+      };
+
+      await event.save();
+
+      res.json({
+        success: true,
+        message: "Seating arrangement saved successfully",
+        data: {
+          seating: event.seating,
+        },
+      });
+    } catch (error) {
+      console.error("Save seating error:", error);
+      res.status(500).json({
         success: false,
-        message: "Event not found or you don't have access",
+        message: "Server error saving seating arrangement",
       });
     }
-
-    // Update seating data
-    event.seating = {
-      ...seatingData,
-      lastUpdated: new Date(),
-    };
-
-    await event.save();
-
-    res.json({
-      success: true,
-      message: "Seating arrangement saved successfully",
-      data: {
-        seating: event.seating,
-      },
-    });
-  } catch (error) {
-    console.error("Save seating error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error saving seating arrangement",
-    });
   }
-});
+);
 
 // Get seating arrangement
-router.get("/:eventId/seating", authenticateToken, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user._id;
+router.get(
+  "/:eventId/seating",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
 
-    // Verify user has access to this event
-    const event = await Event.findOne({
-      _id: eventId,
-      "members.user": userId,
-      isActive: true,
-    });
+      // Verify user has access to this event
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
 
-    if (!event) {
-      return res.status(404).json({
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or you don't have access",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          seating: event.seating || {
+            groups: [],
+            lastUpdated: new Date(),
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Get seating error:", error);
+      res.status(500).json({
         success: false,
-        message: "Event not found or you don't have access",
+        message: "Server error fetching seating arrangement",
       });
     }
-
-    res.json({
-      success: true,
-      data: {
-        seating: event.seating || {
-          groups: [],
-          lastUpdated: new Date(),
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Get seating error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error fetching seating arrangement",
-    });
   }
-});
+);
 
 // ------- Vendor Management CRUD -------
 // Add vendor
 router.post(
   "/:eventId/vendors",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("category")
       .trim()
@@ -1291,35 +1515,44 @@ router.post(
 );
 
 // Get all vendors for an event
-router.get("/:eventId/vendors", authenticateToken, async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const userId = req.user._id;
+router.get(
+  "/:eventId/vendors",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
 
-    const event = await Event.findOne({
-      _id: eventId,
-      "members.user": userId,
-      isActive: true,
-    }).select("vendors");
-    if (!event) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Event not found or access denied" });
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      }).select("vendors");
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      res.json({ success: true, data: { vendors: event.vendors } });
+    } catch (error) {
+      console.error("Get vendors error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Server error fetching vendors" });
     }
-
-    res.json({ success: true, data: { vendors: event.vendors } });
-  } catch (error) {
-    console.error("Get vendors error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server error fetching vendors" });
   }
-});
+);
 
 // Update vendor
 router.put(
   "/:eventId/vendors/:vendorId",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   [
     body("category").optional().isString(),
     body("name").optional().isString(),
@@ -1441,6 +1674,8 @@ router.put(
 router.delete(
   "/:eventId/vendors/:vendorId",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   async (req, res) => {
     try {
       const { eventId, vendorId } = req.params;
@@ -1487,6 +1722,8 @@ router.delete(
 router.post(
   "/:eventId/vendors/:vendorId/upload",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   upload.array("documents", 5),
   async (req, res) => {
     try {
@@ -1559,6 +1796,8 @@ router.post(
 router.get(
   "/:eventId/vendors/:vendorId/documents/:filename",
   authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
   async (req, res) => {
     try {
       const { eventId, vendorId, filename } = req.params;

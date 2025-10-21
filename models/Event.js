@@ -40,12 +40,12 @@ const eventSchema = new mongoose.Schema({
       },
       role: {
         type: String,
-        enum: ["bride", "groom", "family", "friend", "guest"],
+        enum: ["owner", "bride", "groom", "family", "friend", "guest"],
         default: "guest",
       },
       permissions: {
         type: String,
-        enum: ["admin", "collaborator", "pending_approval"],
+        enum: ["owner", "admin", "collaborator", "pending_approval"],
         default: "pending_approval",
       },
       joinedAt: {
