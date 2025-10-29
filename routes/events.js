@@ -151,47 +151,42 @@ router.post(
   }
 );
 
-
 //delet this
-router.delete(
-  "/:eventId",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
-
-      const { eventId } = req.params;
-
-      const event = await Event.findOne({
-        _id: eventId,
-        isActive: true,
+router.delete("/:eventId", authenticateToken, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: errors.array(),
       });
-
-      if (!event) {
-        return res.status(404).json({
-          success: false,
-          message: "Event not found or access denied",
-        });
-      }
-
-      await event.deleteOne()
-
-      res.json({ success: true, message: "Event deleted", data: { event } });
-    } catch (error) {
-      console.error("Delete event error:", error);
-      res
-        .status(500)
-        .json({ success: false, message: "Server error deleting event" });
     }
+
+    const { eventId } = req.params;
+
+    const event = await Event.findOne({
+      _id: eventId,
+      isActive: true,
+    });
+
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "Event not found or access denied",
+      });
+    }
+
+    await event.deleteOne();
+
+    res.json({ success: true, message: "Event deleted", data: { event } });
+  } catch (error) {
+    console.error("Delete event error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error deleting event" });
   }
-);
+});
 
 // Join event by invite code
 router.post(
@@ -1239,7 +1234,7 @@ router.put(
 
       // Update settings
       Object.keys(updates).forEach((key) => {
-        if (updates[key] !== undefined && event.settings[key] !== undefined) {
+        if (updates[key] !== undefined) {
           event.settings[key] = updates[key];
         }
       });
