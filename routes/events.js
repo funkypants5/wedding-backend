@@ -15,6 +15,51 @@ import {
 
 const router = express.Router();
 
+const DEFAULT_CHECKLIST_ITEMS = [
+  {
+    title: "Finalize guest list",
+    notes: "Confirm RSVPs and dietary requirements.",
+    category: "Guests",
+  },
+  {
+    title: "Confirm vendors",
+    notes: "Verify contracts with venue, catering, music, and photographer.",
+    category: "Vendors",
+  },
+  {
+    title: "Create wedding day timeline",
+    notes: "Share with bridal party and vendors.",
+    category: "Planning",
+  },
+  {
+    title: "Arrange transportation",
+    notes: "Book vehicles for wedding party and guests if needed.",
+    category: "Logistics",
+  },
+  {
+    title: "Prepare ceremony vows",
+    notes: "Write or review vows and readings.",
+    category: "Ceremony",
+  },
+  {
+    title: "Finalize seating chart",
+    notes: "Ensure special accommodations are considered.",
+    category: "Reception",
+  },
+];
+
+const generateDefaultChecklist = (eventDate, creatorId) => {
+  const deadline = eventDate ? new Date(eventDate) : new Date();
+  return DEFAULT_CHECKLIST_ITEMS.map((item) => ({
+    ...item,
+    deadline,
+    customDeadline: false,
+    createdBy: creatorId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }));
+};
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -116,6 +161,7 @@ router.post(
             joinedAt: new Date(),
           },
         ],
+        checklist: generateDefaultChecklist(eventDate, userId),
       });
 
       await event.save();
@@ -367,6 +413,289 @@ router.get(
       res.status(500).json({
         success: false,
         message: "Server error fetching members",
+      });
+    }
+  }
+);
+
+// ------- Checklist CRUD within an event -------
+router.get(
+  "/:eventId/checklist",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user._id;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      }).select("checklist eventDate");
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          checklist: event.checklist,
+        },
+      });
+    } catch (error) {
+      console.error("Get checklist error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error fetching checklist",
+      });
+    }
+  }
+);
+
+router.post(
+  "/:eventId/checklist",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  [
+    body("title")
+      .trim()
+      .isLength({ min: 1 })
+      .withMessage("Task title is required"),
+    body("category").optional().trim().isLength({ min: 1 }),
+    body("notes").optional().trim().isLength({ max: 1000 }),
+    body("deadline").optional().isISO8601(),
+    body("customDeadline").optional().isBoolean(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+      const {
+        title,
+        notes = "",
+        category = "General",
+        deadline,
+        customDeadline,
+      } = req.body;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const deadlineDate = deadline
+        ? new Date(deadline)
+        : new Date(event.eventDate);
+
+      if (Number.isNaN(deadlineDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid deadline date",
+        });
+      }
+
+      const defaultEventDate = new Date(event.eventDate);
+      const isCustom =
+        typeof customDeadline === "boolean"
+          ? customDeadline
+          : deadline
+          ? deadlineDate.getTime() !== defaultEventDate.getTime()
+          : false;
+
+      event.checklist.push({
+        title,
+        notes,
+        category,
+        deadline: deadlineDate,
+        customDeadline: isCustom,
+        createdBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await event.save();
+
+      res.status(201).json({
+        success: true,
+        message: "Task added to checklist",
+        data: {
+          checklist: event.checklist,
+        },
+      });
+    } catch (error) {
+      console.error("Add checklist task error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error adding task",
+      });
+    }
+  }
+);
+
+router.put(
+  "/:eventId/checklist/:taskId",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  [
+    body("title").optional().trim().isLength({ min: 1 }),
+    body("category").optional().trim().isLength({ min: 1 }),
+    body("notes").optional().trim().isLength({ max: 1000 }),
+    body("deadline").optional().isISO8601(),
+    body("completed").optional().isBoolean(),
+    body("customDeadline").optional().isBoolean(),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { eventId, taskId } = req.params;
+      const userId = req.user._id;
+      const updates = req.body;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const task = event.checklist.id(taskId);
+
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          message: "Checklist task not found",
+        });
+      }
+
+      if (updates.title !== undefined) task.title = updates.title;
+      if (updates.category !== undefined) task.category = updates.category;
+      if (updates.notes !== undefined) task.notes = updates.notes;
+      if (updates.completed !== undefined) task.completed = updates.completed;
+
+      if (updates.deadline !== undefined) {
+        const deadlineDate = new Date(updates.deadline);
+        if (Number.isNaN(deadlineDate.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid deadline date",
+          });
+        }
+        task.deadline = deadlineDate;
+        const defaultEventDate = new Date(event.eventDate);
+        task.customDeadline =
+          typeof updates.customDeadline === "boolean"
+            ? updates.customDeadline
+            : deadlineDate.getTime() !== defaultEventDate.getTime();
+      } else if (updates.customDeadline !== undefined) {
+        task.customDeadline = updates.customDeadline;
+      }
+
+      task.updatedAt = new Date();
+
+      await event.save();
+
+      res.json({
+        success: true,
+        message: "Checklist task updated",
+        data: {
+          checklist: event.checklist,
+        },
+      });
+    } catch (error) {
+      console.error("Update checklist task error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error updating task",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/:eventId/checklist/:taskId",
+  authenticateToken,
+  requireEventMember,
+  blockPendingUsers,
+  async (req, res) => {
+    try {
+      const { eventId, taskId } = req.params;
+      const userId = req.user._id;
+
+      const event = await Event.findOne({
+        _id: eventId,
+        "members.user": userId,
+        isActive: true,
+      });
+
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: "Event not found or access denied",
+        });
+      }
+
+      const task = event.checklist.id(taskId);
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          message: "Checklist task not found",
+        });
+      }
+
+      task.deleteOne();
+      await event.save();
+
+      res.json({
+        success: true,
+        message: "Checklist task deleted",
+        data: {
+          checklist: event.checklist,
+        },
+      });
+    } catch (error) {
+      console.error("Delete checklist task error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Server error deleting task",
       });
     }
   }

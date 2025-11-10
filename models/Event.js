@@ -118,6 +118,20 @@ const eventSchema = new mongoose.Schema({
       updatedAt: { type: Date, default: Date.now },
     },
   ],
+  // Checklist tasks per event
+  checklist: [
+    {
+      title: { type: String, required: true, trim: true },
+      notes: { type: String, default: "", trim: true },
+      category: { type: String, default: "General", trim: true },
+      completed: { type: Boolean, default: false },
+      deadline: { type: Date, default: Date.now },
+      customDeadline: { type: Boolean, default: false },
+      createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now },
+    },
+  ],
   // Guests persisted per event
   guests: [
     {
